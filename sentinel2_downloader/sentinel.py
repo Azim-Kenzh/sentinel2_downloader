@@ -1,136 +1,172 @@
 import os
-import time
+from typing import Dict
+
+from tqdm import tqdm
+import pandas as pd
 
 import requests
-from tqdm import tqdm
+from pprint import pprint
 
 
-class SentinelAPI:
-    def __init__(self, username, password, api_url='https://catalogue.dataspace.copernicus.eu/odata/v1/Products'):
-        """Initializes the SentinelAPI instance.
-        Args:
-            username (str): The username for authentication.
-            password (str): The password for authentication.
-            api_url (str, optional): The API URL for accessing Sentinel data. Default is the Copernicus API URL.
+class ApiClient:
+    def __init__(self, username: str, password: str) -> None:
+        self.USERNAME = username
+        self.PASSWORD = password
 
-        Raises:
-            Exception: If token creation fails or the response from the server is not successful.
-        """
-        self.api_url = api_url
-        if username and password:
-            data = {
-                "client_id": "cdse-public",
-                "username": username,
-                "password": password,
-                "grant_type": "password",
-            }
-            try:
-                response_token = requests.post(
-                    "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
-                    data=data)
-                response_token.raise_for_status()
-                self.token = response_token.json()
-            except Exception as e:
-                raise Exception(
-                    f"Keycloak token creation failed. Response from the server was: {response_token.json()}"
-                )
-
-    def query(self, footprint: str, start_date: str, end_date: str, product_type: str, cloud_cover_percentage: str,
-              platform_name: str):
-        """ Queries the Sentinel data based on the provided parameters.
-        Args:
-            footprint (str): The footprint to define the geographic area of interest.
-                It should be in Well-Known Text (WKT) format.
-                Example: 'POLYGON((longitude1 latitude1, longitude2 latitude2, longitude3 latitude3, ...))'
-            start_date (str): The start date of the data acquisition period.
-            end_date (str): The end date of the data acquisition period.
-            product_type (str): The type of Sentinel product to query.
-            cloud_cover_percentage (str): The maximum cloud cover percentage allowed.
-            platform_name (str): The name of the Sentinel platform.
-
-        Returns:
-            dict: The JSON response containing the queried products.
-
-        Raises:
-            Exception: If any of the required parameters is missing.
-        """
-
-        if footprint and start_date and end_date and platform_name and cloud_cover_percentage and product_type:
-            params = {
-                '$filter': f"""OData.CSC.Intersects(area=geography'SRID=4326;{footprint}')
-                            and ContentDate/Start gt {start_date}T00:00:00.000Z and
-                            ContentDate/Start lt {end_date}T00:00:00.000Z and
-                            Collection/Name eq '{platform_name}' and
-                            Attributes/OData.CSC.DoubleAttribute/any(att:att/Name eq 'cloudCover' and
-                            att/OData.CSC.DoubleAttribute/Value lt {cloud_cover_percentage}) and 
-                            contains(Name,'{product_type}')""",
-                '$orderby': 'ContentDate/Start'
-            }
-            url = self.api_url
-            response = requests.get(url, params=params)
-            if response.status_code == 200:
-                for product in response.json()['value']:
-                    if product['Online']:
-                        self.product_name = response.json()['value']
-                        return response.json()['value']
-            else:
-                return None
-        else:
-            raise Exception("parameter 'year or land_type' is required")
-
-    def download(self, product_id, directory_path):
-        """Downloads the Sentinel product with the specified product ID.
-            Args:
-                product_id (str, optional): The ID of the product to download.
-                    If not provided, downloads the last queried product.
-                directory_path (str, optional): The directory path to save the downloaded product.
-                    Default is the current directory.
-            Raises:
-                requests.exceptions.RequestException: If the download fails or the status code is not 200.
-        """
-        headers = {'Authorization': f'Bearer {self.token["access_token"]}'}
-        product_list = self.product_name
-        product_name = [p for p in product_list if p['Id'] == f'{product_id}'][0]['Name']
-        url = self.api_url
+    def authorize(self) -> str:
+        data = {
+            "client_id": "cdse-public",
+            "username": self.USERNAME,
+            "password": self.PASSWORD,
+            "grant_type": "password",
+        }
         try:
-            session = requests.Session()
-            session.headers.update(headers)
-            response_download = session.get(f"{url}({product_id})/$value", allow_redirects=False)
-            while response_download.status_code in (301, 302, 303, 307):
-                url = response_download.headers['Location']
-                response_download = session.get(url, allow_redirects=False)
-            response_download = session.get(url, verify=False, allow_redirects=True)
-
-            if response_download.status_code == 200:
-                final_directory = os.path.abspath(directory_path)
-                os.makedirs(final_directory, exist_ok=True)
-
-                file_path = os.path.join(final_directory, f"{product_name}.zip")
-                total_size = int(response_download.headers.get('content-length', 0))
-
-                with open(file_path, 'wb') as f, tqdm(
-                        desc=f"Downloading {product_name}:",
-                        total=total_size,
-                        unit='B',
-                        unit_scale=True,
-                        unit_divisor=1024,
-                        dynamic_ncols=True) as progress_bar:
-                    downloaded_size = 0
-                    block_size = 1024
-                    start_time = time.time()
-
-                    for data in response_download.iter_content(block_size):
-                        downloaded_size += len(data)
-                        f.write(data)
-                        progress_bar.update(len(data))
-
-                    elapsed_time = time.time() - start_time
-                    speed = (downloaded_size / elapsed_time) / 1024 if elapsed_time > 0 else 0
-                    progress_bar.set_postfix(speed=f"{speed:.2f} kB/s", elapsed=f"{elapsed_time:.2f} s")
-                    progress_bar.close()
-
-                print("Download complete!")
-            else:
-                raise requests.exceptions.RequestException("Status code is not 200")
+            r = requests.post(
+                "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
+                data=data,
+            )
+            r.raise_for_status()
         except Exception as e:
-            raise requests.exceptions.RequestException(e)
+            raise Exception(f"Access token creation failed: {e}")
+
+        return r.json()["access_token"]
+
+
+class Sentinel2Downloader:
+    def __init__(self, client: ApiClient):
+        """
+        Initialize the Sentinel2Downloader with an ApiClient instance.
+
+        :param client: ApiClient
+            An instance of ApiClient used for authentication.
+        """
+        self.client = client
+
+    def set_config(
+        self,
+        start_date: str,
+        end_date: str,
+        data_collection: str,
+        aoi: str,
+        cloud_cover_percentage: int,
+        product_type: str,
+        download_path: str,
+        catalogue_url: str = f"""https://catalogue.dataspace.copernicus.eu/odata/v1/Products""",
+    ) -> None:
+        """
+        Set configuration parameters for the Sentinel-2 downloader.
+
+        :param start_date: str
+            Start date for the data collection period.
+        :param end_date: str
+            End date for the data collection period.
+        :param data_collection: str
+            Name of the data collection to filter.
+        :param aoi: str
+            Area of interest (AOI) in a specific format.
+        :param cloud_cover_percentage: int
+            Maximum cloud cover percentage for filtering.
+        :param product_type: str
+            Type of dataspace picture: for example (L2M, MSIL1C)
+        :param catalogue_url: str
+            default: https://catalogue.dataspace.copernicus.eu/odata/v1/Products
+            URL path to current dataspace data API
+        """
+
+        self.start_date = start_date
+        self.end_date = end_date
+        self.data_collection = data_collection
+        self.aoi = aoi
+        self.cloud_cover_percentage = cloud_cover_percentage
+        self.product_type = product_type
+        self.download_path = download_path
+        self.catalogue_url = catalogue_url
+
+    def set_params_process(self) -> Dict[str, str]:
+        """
+        Create a URL for querying Sentinel-2 products based on configuration.
+
+        :return: str
+            The generated query URL.
+        """
+        params = {
+            "$filter": f"""Collection/Name eq '{self.data_collection}' 
+                and OData.CSC.Intersects(area=geography'SRID=4326;{self.aoi})
+                and ContentDate/Start gt {self.start_date}T00:00:00.000Z
+                and ContentDate/Start lt {self.end_date}T00:00:00.000Z
+                and Attributes/OData.CSC.DoubleAttribute/any(att:att/Name eq 'cloudCover'
+                and att/OData.CSC.DoubleAttribute/Value lt {self.cloud_cover_percentage})
+                and contains(Name,'{self.product_type}')""",
+            "$orderby": "ContentDate/Start",
+        }
+        return params
+
+    def get_products(self, url: str, params: Dict[str, str]) -> pd.DataFrame:
+        """
+        Get a DataFrame of Sentinel-2 products from a query URL.
+
+        :param url: str
+            The query URL to fetch products.
+        :param params: dict
+            The query params to filter product
+        :return: pd.DataFrame
+            A DataFrame containing product information.
+        """
+
+        response = requests.get(url, params=params)
+        if response.status_code == 200:
+            response_json = response.json()
+            dt = pd.DataFrame.from_dict(response_json["value"]).head(5)
+            pprint(dt)
+            pprint(f"Products found count: {len(dt)}")
+            return dt
+
+        else:
+            raise Exception("Bad request", response.json())
+
+    def download_product(self, token: str, product_id: int) -> None:
+        """
+        Download product of Sentinel-2 product
+
+        :param token: Your access token
+        :param product_id: id of sentinel-2 product
+        """
+        url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({product_id})/$value"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        try:
+            with requests.get(url, headers=headers, stream=True) as response:
+                response.raise_for_status()
+                total_size = int(response.headers.get("content-length", 0))
+                os.makedirs(str(self.download_path), exist_ok=True)
+                full_path = os.path.join(self.download_path)
+                with open(f"{full_path}/product{product_id}.zip", "wb") as file, tqdm(
+                    desc=f"Downloading:",
+                    total=total_size,
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    dynamic_ncols=True,
+                ) as progress_bar:
+                    for data in response.iter_content(chunk_size=1024):
+                        file.write(data)
+                        progress_bar.update(len(data))
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Failed to download product {product_id}: {e}")
+
+    def execute(self) -> None:
+        """
+        Main process for downloading Sentinel-2 data.
+        """
+        try:
+            client = self.client
+            token = client.authorize()
+            params = self.set_params_process()
+            product_data = self.get_products(url=self.catalogue_url, params=params)
+            product_ids = product_data.get("Id")
+
+            if product_ids is not None:
+                for product_id in product_ids:
+                    self.download_product(token, product_id)
+        except Exception as e:
+            pprint(e)
