@@ -183,25 +183,4 @@ class Sentinel2Downloader(IDownloaderService):
         except Exception as e:
             print(e)
 
-# Usage example
-if __name__ == "__main__":
-    start_date = "2023-08-01"
-    end_date = "2023-08-30"
-    data_collection = "SENTINEL-2"
-    aoi = "POLYGON((77.42729554874207 42.302451615096686, 78.81812370370375 42.302451615096686, 78.81812370370375 43.32625697132075, 77.42729554874207 43.32625697132075, 77.42729554874207 42.302451615096686))'"
 
-    username = config("S2_USERNAME")
-    password = config("S2_PASSWORD")
-    client = ApiClient(username=username, password=password)
-
-    downloader = Sentinel2Downloader(client=client)
-    downloader.set_config(
-        start_date,
-        end_date,
-        data_collection,
-        aoi,
-        cloud_cover_percentage=20,
-        product_type="MSIL1C",
-        download_path="s2_result"
-    )
-    downloader.execute()
