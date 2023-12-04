@@ -57,14 +57,14 @@ class SentinelAPI:
 
         if footprint and start_date and end_date and platform_name and cloud_cover_percentage and product_type:
             params = {
-                '$filter': f"""OData.CSC.Intersects(area=geography'SRID=4326;{footprint}')
-                            and ContentDate/Start gt {start_date}T00:00:00.000Z and
-                            ContentDate/Start lt {end_date}T00:00:00.000Z and
-                            Collection/Name eq '{platform_name}' and
-                            Attributes/OData.CSC.DoubleAttribute/any(att:att/Name eq 'cloudCover' and
-                            att/OData.CSC.DoubleAttribute/Value lt {cloud_cover_percentage}) and 
-                            contains(Name,'{product_type}')""",
-                '$orderby': 'ContentDate/Start'
+                "$filter": f"""Collection/Name eq '{platform_name}' 
+                            and OData.CSC.Intersects(area=geography'SRID=4326;{footprint})
+                            and ContentDate/Start gt {start_date}T00:00:00.000Z
+                            and ContentDate/Start lt {end_date}T00:00:00.000Z
+                            and Attributes/OData.CSC.DoubleAttribute/any(att:att/Name eq 'cloudCover'
+                            and att/OData.CSC.DoubleAttribute/Value lt {cloud_cover_percentage})
+                            and contains(Name,'{product_type}')""",
+                "$orderby": "ContentDate/Start",
             }
             url = self.api_url
             response = requests.get(url, params=params)
