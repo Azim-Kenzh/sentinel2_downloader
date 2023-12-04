@@ -86,6 +86,7 @@ class Sentinel2Downloader(IDownloaderService):
         aoi: str,
         cloud_cover_percentage: int,
         product_type: str,
+        download_path: str,
     ) -> None:
         """
         Set configuration parameters for the Sentinel-2 downloader.
@@ -109,6 +110,7 @@ class Sentinel2Downloader(IDownloaderService):
         self.aoi = aoi
         self.cloud_cover_percentage = cloud_cover_percentage
         self.product_type = product_type
+        self.download_path = download_path
 
     def create_url_process(self) -> str:
         """
@@ -148,8 +150,8 @@ class Sentinel2Downloader(IDownloaderService):
             with requests.get(url, headers=headers, stream=True) as response:
                 response.raise_for_status()
                 total_size = int(response.headers.get("content-length", 0))
-                os.makedirs("result", exist_ok=True)
-                full_path = os.path.join("result")
+                os.makedirs(str(self.download_path), exist_ok=True)
+                full_path = os.path.join(self.download_path)
                 with open(f"{full_path}/product{product_id}.zip", "wb") as file, tqdm(
                         desc=f"Downloading:",
                         total=total_size,
@@ -180,3 +182,5 @@ class Sentinel2Downloader(IDownloaderService):
                     self.download_product(token, product_id)
         except Exception as e:
             print(e)
+
+
