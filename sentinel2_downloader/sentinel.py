@@ -68,7 +68,6 @@ class SentinelAPI:
             }
             url = self.api_url
             response = requests.get(url, params=params)
-            print(response)
             if response.status_code == 200:
                 for product in response.json()['value']:
                     if product['Online']:
