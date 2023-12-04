@@ -86,6 +86,7 @@ class Sentinel2Downloader(IDownloaderService):
         aoi: str,
         cloud_cover_percentage: int,
         product_type: str,
+        download_path: str,
     ) -> None:
         """
         Set configuration parameters for the Sentinel-2 downloader.
@@ -109,6 +110,7 @@ class Sentinel2Downloader(IDownloaderService):
         self.aoi = aoi
         self.cloud_cover_percentage = cloud_cover_percentage
         self.product_type = product_type
+        self.download_path = download_path
 
     def create_url_process(self) -> str:
         """
@@ -148,8 +150,8 @@ class Sentinel2Downloader(IDownloaderService):
             with requests.get(url, headers=headers, stream=True) as response:
                 response.raise_for_status()
                 total_size = int(response.headers.get("content-length", 0))
-                os.makedirs("result", exist_ok=True)
-                full_path = os.path.join("result")
+                os.makedirs(str(self.download_path), exist_ok=True)
+                full_path = os.path.join(self.download_path)
                 with open(f"{full_path}/product{product_id}.zip", "wb") as file, tqdm(
                         desc=f"Downloading:",
                         total=total_size,
@@ -180,3 +182,26 @@ class Sentinel2Downloader(IDownloaderService):
                     self.download_product(token, product_id)
         except Exception as e:
             print(e)
+
+# Usage example
+if __name__ == "__main__":
+    start_date = "2023-08-01"
+    end_date = "2023-08-30"
+    data_collection = "SENTINEL-2"
+    aoi = "POLYGON((77.42729554874207 42.302451615096686, 78.81812370370375 42.302451615096686, 78.81812370370375 43.32625697132075, 77.42729554874207 43.32625697132075, 77.42729554874207 42.302451615096686))'"
+
+    username = config("S2_USERNAME")
+    password = config("S2_PASSWORD")
+    client = ApiClient(username=username, password=password)
+
+    downloader = Sentinel2Downloader(client=client)
+    downloader.set_config(
+        start_date,
+        end_date,
+        data_collection,
+        aoi,
+        cloud_cover_percentage=20,
+        product_type="MSIL1C",
+        download_path="s2_result"
+    )
+    downloader.execute()
